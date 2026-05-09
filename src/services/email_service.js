@@ -2,17 +2,27 @@ const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: process.env.SMTP_PORT || 587,
-  secure: false, // true for 465, false for other ports
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
 });
 
+// Verify connection configuration
+transporter.verify(function (error, success) {
+  if (error) {
+    console.error('[EmailService] SMTP Connection Error:', error);
+  } else {
+    console.log('[EmailService] SMTP Server is ready to take our messages');
+  }
+});
+
 async function sendOTP(email, otp) {
+  console.log(`[EmailService] Attempting to send OTP to: ${email}`);
   const mailOptions = {
-    from: `"ALTERA Support" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+    from: process.env.SMTP_FROM || `"ALTERA Support" <${process.env.SMTP_USER}>`,
     to: email,
     subject: 'Your ALTERA Verification Code',
     text: `Your OTP for ALTERA is: ${otp}. It will expire in 10 minutes.`,
@@ -28,12 +38,20 @@ async function sendOTP(email, otp) {
     `,
   };
 
-  return transporter.sendMail(mailOptions);
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('[EmailService] OTP sent successfully:', info.messageId);
+    return info;
+  } catch (err) {
+    console.error('[EmailService] Failed to send OTP:', err);
+    throw err;
+  }
 }
 
 async function sendPasswordResetOTP(email, otp) {
+  console.log(`[EmailService] Attempting to send Password Reset OTP to: ${email}`);
   const mailOptions = {
-    from: `"ALTERA Support" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+    from: process.env.SMTP_FROM || `"ALTERA Support" <${process.env.SMTP_USER}>`,
     to: email,
     subject: 'ALTERA Password Reset Request',
     text: `Your code to reset your password is: ${otp}. It will expire in 10 minutes.`,
@@ -49,7 +67,14 @@ async function sendPasswordResetOTP(email, otp) {
     `,
   };
 
-  return transporter.sendMail(mailOptions);
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('[EmailService] Password Reset OTP sent successfully:', info.messageId);
+    return info;
+  } catch (err) {
+    console.error('[EmailService] Failed to send Password Reset OTP:', err);
+    throw err;
+  }
 }
 
 module.exports = { sendOTP, sendPasswordResetOTP };

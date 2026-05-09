@@ -330,8 +330,10 @@ router.post('/auth0', async (req, res) => {
 
     // 2. Find or create user
     let user = await db.queryOne('SELECT * FROM users WHERE email = $1', [email]);
+    let isNewUser = false;
     
     if (!user) {
+      isNewUser = true;
       const userId = uuidv4();
       const username = await createUniqueUsername(nickname || name || email.split('@')[0]);
       // Social users need a placeholder password hash since the column is NOT NULL
@@ -385,6 +387,7 @@ router.post('/auth0', async (req, res) => {
         },
         ai_profiles: aiProfiles,
       },
+      is_new_user: isNewUser,
     });
   } catch (err) {
     console.error('[auth/auth0]', err);
@@ -606,8 +609,11 @@ router.post('/request-otp', async (req, res) => {
     await sendOTP(email, otp);
     res.json({ message: 'OTP sent to your email' });
   } catch (err) {
-    console.error('[request-otp]', err);
-    res.status(500).json({ message: 'Failed to send OTP' });
+    console.error('[request-otp] CRITICAL ERROR:', err);
+    res.status(500).json({ 
+      message: 'Failed to send OTP', 
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined 
+    });
   }
 });
 
@@ -655,7 +661,11 @@ router.post('/forgot-password', async (req, res) => {
     await sendPasswordResetOTP(email, otp);
     res.json({ message: 'Password reset OTP sent' });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to send reset code' });
+    console.error('[forgot-password] CRITICAL ERROR:', err);
+    res.status(500).json({ 
+      message: 'Failed to send reset code',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 
@@ -710,6 +720,29 @@ router.post('/change-password', authMiddleware, async (req, res) => {
     res.json({ message: 'Password changed successfully' });
   } catch (err) {
     res.status(500).json({ message: 'Failed to change password' });
+  }
+});
+
+// ─── POST /auth/set-initial-password — Set password for new social login users
+router.post('/set-initial-password', authMiddleware, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password || password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    const user = await db.queryOne('SELECT created_at FROM users WHERE id = $1', [req.userId]);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Allow setting initial password only if the account is relatively new (e.g., within 1 hour)
+    // Or we could add a specific flag to the DB, but this is a simpler heuristic for social logins
+    const hash = await bcrypt.hash(password, 12);
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.userId]);
+
+    res.json({ message: 'Initial password set successfully' });
+  } catch (err) {
+    console.error('[set-initial-password]', err);
+    res.status(500).json({ message: 'Failed to set password' });
   }
 });
 
