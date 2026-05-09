@@ -1,0 +1,10 @@
+{
+  "ignore": [
+    "public/*",
+    "node_modules/*",
+    "*.test.js",
+    "seed_*.js",
+    "migrate_*.js"
+  ],
+  "delay": "1000"
+}
