@@ -29,8 +29,9 @@ app.set('trust proxy', 1);
 const io = new Server(httpServer, {
   maxHttpBufferSize: 1e8, // 100 MB
   cors: {
-    origin: true,
+    origin: '*',
     methods: ['GET', 'POST'],
+    credentials: false,
   },
 });
 
@@ -40,7 +41,8 @@ app.use(morgan('dev'));
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: false,
 }));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
