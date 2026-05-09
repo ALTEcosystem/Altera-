@@ -1,4 +1,5 @@
 const express = require('express');
+const https = require('https');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { generateTokens, verifyRefreshToken, authMiddleware } = require('../middleware/auth');
@@ -310,6 +311,128 @@ router.post('/refresh', async (req, res) => {
     res.status(500).json({ message: 'Refresh failed' });
   }
 });
+
+// ─── POST /auth/auth0 — Exchange Auth0 Access Token for local session ────────
+router.post('/auth0', async (req, res) => {
+  try {
+    const { access_token } = req.body;
+    if (!access_token) {
+      return res.status(400).json({ message: 'access_token is required' });
+    }
+
+    // 1. Verify token with Auth0 /userinfo
+    const auth0User = await fetchAuth0User(access_token);
+    if (!auth0User || !auth0User.email) {
+      return res.status(401).json({ message: 'Invalid or expired Auth0 token' });
+    }
+
+    const { email, name, nickname, picture } = auth0User;
+
+    // 2. Find or create user
+    let user = await db.queryOne('SELECT * FROM users WHERE email = $1', [email]);
+    
+    if (!user) {
+      const userId = uuidv4();
+      const username = await createUniqueUsername(nickname || name || email.split('@')[0]);
+      // Social users need a placeholder password hash since the column is NOT NULL
+      const placeholderHash = await bcrypt.hash(uuidv4(), 12);
+      
+      await db.query(
+        'INSERT INTO users (id, email, username, full_name, avatar_url, password_hash, is_verified) VALUES ($1, $2, $3, $4, $5, $6, TRUE)',
+        [userId, email, username, name || username, picture || null, placeholderHash]
+      );
+      
+      user = await db.queryOne('SELECT * FROM users WHERE id = $1', [userId]);
+    }
+
+    // 3. Generate local tokens
+    const { token, refreshToken } = generateTokens(user.id);
+
+    // 4. Get counts and AI profiles
+    const humanCounts = await getHumanFollowCounts(user.id);
+    const aiProfilesRaw = await db.queryMany('SELECT * FROM ai_profiles WHERE user_id = $1', [user.id]);
+    
+    const aiProfiles = await Promise.all(aiProfilesRaw.map(async (p) => {
+      const counts = await getAIFollowCounts(p.id);
+      return {
+        ...p,
+        ...deriveAIMetadata(p),
+        follower_count: counts.follower_count,
+        post_count: counts.post_count,
+      };
+    }));
+
+    res.json({
+      token,
+      refresh_token: refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        wallet_address: user.wallet_address,
+        created_at: user.created_at,
+        human_profile: {
+          id: user.id,
+          user_id: user.id,
+          username: user.username,
+          display_name: user.full_name,
+          avatar: user.avatar_url,
+          bio: user.bio,
+          follower_count: humanCounts.follower_count,
+          following_count: humanCounts.following_count,
+          post_count: humanCounts.post_count,
+          health_score: parseFloat(user.health_score || 100),
+        },
+        ai_profiles: aiProfiles,
+      },
+    });
+  } catch (err) {
+    console.error('[auth/auth0]', err);
+    res.status(500).json({ message: 'Auth0 authentication failed' });
+  }
+});
+
+/**
+ * Helper to fetch user information from Auth0 using an access token.
+ */
+function fetchAuth0User(accessToken) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: process.env.AUTH0_DOMAIN,
+      path: '/userinfo',
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode === 200) {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            console.error('Failed to parse Auth0 userinfo response:', e);
+            resolve(null);
+          }
+        } else {
+          console.error(`Auth0 userinfo failed with status ${res.statusCode}: ${data}`);
+          resolve(null);
+        }
+      });
+    });
+
+    req.on('error', (err) => {
+      console.error('Auth0 userinfo request error:', err);
+      resolve(null);
+    });
+    
+    req.end();
+  });
+}
 
 
 const fs = require('fs');
