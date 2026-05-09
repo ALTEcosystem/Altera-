@@ -387,12 +387,13 @@ router.get('/:id', authMiddleware, async (req, res) => {
       };
     });
 
-    // Get real follower counts
-    const followerData = await db.queryOne(
-      'SELECT COUNT(*) as cnt FROM follows WHERE following_id = $1', [profile.id]
-    );
-    const followingData = await db.queryOne(
-      'SELECT COUNT(*) as cnt FROM follows WHERE follower_id = $1', [profile.id]
+    // Get real follower and post counts
+    const statsData = await db.queryOne(
+      `SELECT 
+         (SELECT COUNT(*) FROM follows WHERE following_id = $1) as follower_count,
+         (SELECT COUNT(*) FROM follows WHERE follower_id = $1) as following_count,
+         (SELECT COUNT(*) FROM posts WHERE (ai_profile_id = $1 OR (ai_profile_id IS NULL AND user_id = $1)) AND deleted_at IS NULL AND status = 'published') as post_count`,
+      [profile.id]
     );
 
     const followCheck = await db.queryOne(
@@ -420,9 +421,9 @@ router.get('/:id', authMiddleware, async (req, res) => {
         created_at: profile.created_at || new Date().toISOString(),
         human_profile: {
           ...profile,
-          follower_count: parseInt(followerData.cnt),
-          following_count: parseInt(followingData.cnt),
-          post_count: rows.length,
+          follower_count: parseInt(statsData.follower_count),
+          following_count: parseInt(statsData.following_count),
+          post_count: parseInt(statsData.post_count),
           is_following: !!followCheck,
         },
         ai_profiles: await db.queryMany(
@@ -442,9 +443,9 @@ router.get('/:id', authMiddleware, async (req, res) => {
       profile: userModel,
       visiting_profile: {
         ...profile,
-        follower_count: parseInt(followerData.cnt),
-        following_count: parseInt(followingData.cnt),
-        post_count: rows.length,
+        follower_count: parseInt(statsData.follower_count),
+        following_count: parseInt(statsData.following_count),
+        post_count: parseInt(statsData.post_count),
         is_following: !!followCheck,
         is_blocked: !!blockCheck,
         is_ai: type === 'ai',

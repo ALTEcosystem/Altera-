@@ -405,7 +405,10 @@ function fetchAuth0User(accessToken) {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json'
       },
+      timeout: 10000 // 10 second timeout
     };
+
+    console.log(`[Auth0] Attempting to fetch userinfo from ${options.hostname}...`);
 
     const req = https.request(options, (res) => {
       let data = '';
@@ -413,20 +416,28 @@ function fetchAuth0User(accessToken) {
       res.on('end', () => {
         if (res.statusCode === 200) {
           try {
-            resolve(JSON.parse(data));
+            const user = JSON.parse(data);
+            console.log(`[Auth0] Successfully fetched user: ${user.email}`);
+            resolve(user);
           } catch (e) {
-            console.error('Failed to parse Auth0 userinfo response:', e);
+            console.error('[Auth0] Failed to parse response:', e);
             resolve(null);
           }
         } else {
-          console.error(`Auth0 userinfo failed with status ${res.statusCode}: ${data}`);
+          console.error(`[Auth0] userinfo failed with status ${res.statusCode}: ${data}`);
           resolve(null);
         }
       });
     });
 
+    req.on('timeout', () => {
+      console.error('[Auth0] Request timed out after 10s');
+      req.destroy();
+      resolve(null);
+    });
+
     req.on('error', (err) => {
-      console.error('Auth0 userinfo request error:', err);
+      console.error('[Auth0] request error:', err.message);
       resolve(null);
     });
     
