@@ -1,17 +1,10 @@
 const nodemailer = require('nodemailer');
 
-const brevoApiKey = process.env.BREVO_API_KEY || '';
-const brevoFromEmail = process.env.BREVO_FROM_EMAIL || '';
-const brevoFromName = process.env.BREVO_FROM_NAME || 'ALTERA';
 const resendApiKey = process.env.RESEND_API_KEY || '';
 const resendFromEmail =
   process.env.RESEND_FROM_EMAIL ||
   process.env.SMTP_FROM ||
   'ALTERA <onboarding@resend.dev>';
-
-function hasBrevoConfig() {
-  return brevoApiKey.trim().length > 0 && brevoFromEmail.trim().length > 0;
-}
 
 function hasResendConfig() {
   return resendApiKey.trim().length > 0;
@@ -66,33 +59,6 @@ async function sendViaResend({ to, subject, text, html }) {
   return payload;
 }
 
-async function sendViaBrevo({ to, subject, text, html }) {
-  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: {
-      'api-key': brevoApiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      sender: {
-        name: brevoFromName,
-        email: brevoFromEmail,
-      },
-      to: [{ email: to }],
-      subject,
-      htmlContent: html,
-      textContent: text,
-    }),
-  });
-
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload?.message || payload?.code || 'Brevo email send failed');
-  }
-
-  return payload;
-}
-
 async function sendViaSmtp({ to, subject, text, html }) {
   const transporter = createSmtpTransporter();
   if (!transporter) {
@@ -110,17 +76,6 @@ async function sendViaSmtp({ to, subject, text, html }) {
 
 async function sendEmail({ to, subject, text, html }) {
   const errors = [];
-
-  if (hasBrevoConfig()) {
-    try {
-      const result = await sendViaBrevo({ to, subject, text, html });
-      console.log('[EmailService] Email sent via Brevo:', result?.messageId || 'ok');
-      return result;
-    } catch (error) {
-      errors.push(`Brevo: ${error.message}`);
-      console.error('[EmailService] Brevo send failed:', error.message);
-    }
-  }
 
   if (hasResendConfig()) {
     try {
