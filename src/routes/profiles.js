@@ -88,21 +88,21 @@ router.get('/me/insights', authMiddleware, async (req, res) => {
     // Posts this week
     const weeklyPosts = await db.queryOne(
       `SELECT COUNT(*) as weekly_posts, COALESCE(SUM(like_count),0) as weekly_likes
-       FROM posts 
-       WHERE user_id = $1 AND created_at > NOW() - INTERVAL '7 days' AND deleted_at IS NULL`,
+        FROM posts 
+       WHERE user_id = $1 AND created_at > NOW() - INTERVAL '7 days' AND deleted_at IS NULL AND status = 'published'`,
       [userId]
     );
 
     // AI-specific metrics — Phase 4: includes weekly per-AI stats
     const aiStats = await db.queryMany(
       `SELECT ai.id, ai.username, ai.display_name, ai.health_score,
-              COUNT(DISTINCT p.id) as post_count,
-              COALESCE(SUM(p.like_count), 0) as total_likes,
-              COALESCE(SUM(p.comment_count), 0) as total_comments,
+              COUNT(DISTINCT CASE WHEN p.status = 'published' THEN p.id END) as post_count,
+              COALESCE(SUM(CASE WHEN p.status = 'published' THEN p.like_count ELSE 0 END), 0) as total_likes,
+              COALESCE(SUM(CASE WHEN p.status = 'published' THEN p.comment_count ELSE 0 END), 0) as total_comments,
               ai.autonomy_enabled, ai.daily_post_limit,
-              COALESCE(SUM(CASE WHEN p.created_at > NOW() - INTERVAL '7 days' THEN 1 ELSE 0 END), 0) as weekly_posts,
-              COALESCE(SUM(CASE WHEN p.created_at > NOW() - INTERVAL '7 days' THEN p.like_count ELSE 0 END), 0) as weekly_likes,
-              COALESCE(SUM(CASE WHEN p.created_at > NOW() - INTERVAL '7 days' THEN p.comment_count ELSE 0 END), 0) as weekly_comments,
+              COALESCE(SUM(CASE WHEN p.status = 'published' AND p.created_at > NOW() - INTERVAL '7 days' THEN 1 ELSE 0 END), 0) as weekly_posts,
+              COALESCE(SUM(CASE WHEN p.status = 'published' AND p.created_at > NOW() - INTERVAL '7 days' THEN p.like_count ELSE 0 END), 0) as weekly_likes,
+              COALESCE(SUM(CASE WHEN p.status = 'published' AND p.created_at > NOW() - INTERVAL '7 days' THEN p.comment_count ELSE 0 END), 0) as weekly_comments,
               COUNT(DISTINCT CASE WHEN p.status = 'pending_approval' THEN p.id END) as pending_count,
               COUNT(DISTINCT CASE WHEN p.is_flagged = TRUE THEN p.id END) as flagged_count
        FROM ai_profiles ai
@@ -389,10 +389,15 @@ router.get('/:id', authMiddleware, async (req, res) => {
 
     // Get real follower and post counts
     const statsData = await db.queryOne(
-      `SELECT 
-         (SELECT COUNT(*) FROM follows WHERE following_id = $1) as follower_count,
-         (SELECT COUNT(*) FROM follows WHERE follower_id = $1) as following_count,
-         (SELECT COUNT(*) FROM posts WHERE (ai_profile_id = $1 OR (ai_profile_id IS NULL AND user_id = $1)) AND deleted_at IS NULL AND status = 'published') as post_count`,
+      type === 'ai'
+        ? `SELECT 
+             (SELECT COUNT(*) FROM follows WHERE following_id = $1) as follower_count,
+             0 as following_count,
+             (SELECT COUNT(*) FROM posts WHERE ai_profile_id = $1 AND deleted_at IS NULL AND status = 'published') as post_count`
+        : `SELECT 
+             (SELECT COUNT(*) FROM follows WHERE following_id = $1) as follower_count,
+             (SELECT COUNT(*) FROM follows WHERE follower_id = $1) as following_count,
+             (SELECT COUNT(*) FROM posts WHERE user_id = $1 AND deleted_at IS NULL AND status = 'published') as post_count`,
       [profile.id]
     );
 

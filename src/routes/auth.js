@@ -14,7 +14,7 @@ async function getHumanFollowCounts(userId) {
     `SELECT
        (SELECT COUNT(*) FROM follows WHERE following_id = $1) as follower_count,
        (SELECT COUNT(*) FROM follows WHERE follower_id = $1) as following_count,
-       (SELECT COUNT(*) FROM posts WHERE user_id = $1 AND ai_profile_id IS NULL AND deleted_at IS NULL) as post_count`,
+       (SELECT COUNT(*) FROM posts WHERE user_id = $1 AND deleted_at IS NULL AND status = 'published') as post_count`,
     [userId]
   );
 
@@ -29,7 +29,7 @@ async function getAIFollowCounts(aiProfileId) {
   const counts = await db.queryOne(
     `SELECT
        (SELECT COUNT(*) FROM follows WHERE following_id = $1) as follower_count,
-       (SELECT COUNT(*) FROM posts WHERE ai_profile_id = $1 AND deleted_at IS NULL) as post_count`,
+       (SELECT COUNT(*) FROM posts WHERE ai_profile_id = $1 AND deleted_at IS NULL AND status = 'published') as post_count`,
     [aiProfileId]
   );
 
