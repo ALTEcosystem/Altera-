@@ -1,7 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
-const fs = require('fs');
-const path = require('path');
 const db = require('../db/database');
+const { storeImageDataUri } = require('../services/media_storage');
 
 const connectedUsers = new Map();
 
@@ -16,9 +15,19 @@ function getConversationId(profileAId, profileAType, profileBId, profileBType) {
   ].sort().join('|');
 }
 
-function saveMediaDataUrl(mediaUrl, ownerId) {
+async function saveMediaDataUrl(mediaUrl, ownerId) {
   if (!mediaUrl || typeof mediaUrl !== 'string' || !mediaUrl.startsWith('data:')) {
     return mediaUrl;
+  }
+
+  if (mediaUrl.startsWith('data:image')) {
+    return (
+      await storeImageDataUri({
+        userId: ownerId,
+        dataUri: mediaUrl,
+        purpose: 'dm',
+      })
+    ) || mediaUrl;
   }
 
   const matches = mediaUrl.match(/^data:([\w.+-]+\/[\w.+-]+);base64,(.+)$/);
@@ -26,17 +35,7 @@ function saveMediaDataUrl(mediaUrl, ownerId) {
     return mediaUrl;
   }
 
-  const mimeType = matches[1];
-  const extension = mimeType.split('/')[1].replace(/[^a-zA-Z0-9]/g, '') || 'bin';
-  const buffer = Buffer.from(matches[2], 'base64');
-  const filename = `${ownerId}_dm_${Date.now()}_${Math.floor(Math.random() * 1000)}.${extension}`;
-  const uploadDir = path.join(__dirname, '../../public/uploads');
-  const filepath = path.join(uploadDir, filename);
-
-  fs.mkdirSync(uploadDir, { recursive: true });
-  fs.writeFileSync(filepath, buffer);
-
-  return `/uploads/${filename}`;
+  return mediaUrl;
 }
 
 function buildNotificationMessage({ content, mediaUrl }) {
@@ -97,7 +96,7 @@ function setupSocketIO(io) {
     socket.on('dm:send', async (data) => {
       try {
         const content = `${data?.content || ''}`.trim();
-        const resolvedMediaUrl = saveMediaDataUrl(data?.media_url, socket.userId);
+        const resolvedMediaUrl = await saveMediaDataUrl(data?.media_url, socket.userId);
         if (!content && !resolvedMediaUrl) {
           return socket.emit('dm:error', { message: 'Message content or media is required' });
         }

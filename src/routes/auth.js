@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const { generateTokens, verifyRefreshToken, authMiddleware } = require('../middleware/auth');
 const db = require('../db/database');
 const { sendOTP, sendPasswordResetOTP } = require('../services/email_service');
+const { storeImageDataUri } = require('../services/media_storage');
 
 const router = express.Router();
 
@@ -36,10 +37,6 @@ async function getAIFollowCounts(aiProfileId) {
     follower_count: parseInt(counts?.follower_count || 0, 10),
     post_count: parseInt(counts?.post_count || 0, 10),
   };
-}
-
-function toUploadPath(filename) {
-  return `/uploads/${filename}`;
 }
 
 function deriveAIMetadata(profile) {
@@ -449,8 +446,6 @@ function fetchAuth0User(accessToken) {
 }
 
 
-const fs = require('fs');
-const path = require('path');
 
 // ─── PUT /auth/profile ───────────────────────────────────────────────────────
 router.put('/profile', authMiddleware, async (req, res) => {
@@ -460,21 +455,13 @@ router.put('/profile', authMiddleware, async (req, res) => {
 
     let avatarUrl = avatar;
     
-    // If avatar is base64 string, decode and save to public/uploads
+    // Persist avatar uploads in the database so they survive redeploys.
     if (avatar && avatar.startsWith('data:image')) {
-      const matches = avatar.match(/^data:image\/([A-Za-z-+\/]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        const extension = matches[1] === 'jpeg' ? 'jpg' : matches[1];
-        const buffer = Buffer.from(matches[2], 'base64');
-        const filename = `${profile_id}_${Date.now()}.${extension}`;
-        const uploadDir = path.join(__dirname, '../../public/uploads');
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        const filepath = path.join(uploadDir, filename);
-        fs.writeFileSync(filepath, buffer);
-        avatarUrl = toUploadPath(filename);
-      }
+      avatarUrl = await storeImageDataUri({
+        userId: req.userId,
+        dataUri: avatar,
+        purpose: 'avatar',
+      }) || avatar;
     }
 
     // Determine if it's the human profile or an AI profile

@@ -22,6 +22,7 @@ const storyRoutes = require('./routes/stories');
 const aiRoutes = require('./routes/ai');
 const { setupSocketIO } = require('./socket/realtime');
 const { runAIPostWorker } = require('./services/ai_generator');
+const { getStoredMedia } = require('./services/media_storage');
 
 const app = express();
 const httpServer = createServer(app);
@@ -82,6 +83,21 @@ app.use('/messages', messageRoutes);
 app.use('/stories', storyRoutes);
 app.use('/ai', aiRoutes);
 app.use('/uploads', express.static('public/uploads'));
+app.get('/media/:id', async (req, res) => {
+  try {
+    const media = await getStoredMedia(req.params.id);
+    if (!media || !media.storage_blob) {
+      return res.status(404).json({ message: 'Media not found' });
+    }
+
+    res.setHeader('Content-Type', media.mime_type || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.send(media.storage_blob);
+  } catch (err) {
+    console.error('[GET /media/:id]', err);
+    return res.status(500).json({ message: 'Failed to load media' });
+  }
+});
 
 // Health check
 app.get('/health', (_, res) => res.json({

@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authMiddleware } = require('../middleware/auth');
 const db = require('../db/database');
+const { storeImageDataUri } = require('../services/media_storage');
 
 const router = express.Router();
 
@@ -192,29 +193,17 @@ router.post('/', authMiddleware, async (req, res) => {
     // Extract hashtags from content
     const hashtags = (content.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase());
 
-    const fs = require('fs');
-    const path = require('path');
-    
     // Process media_urls for base64 images
     let finalMediaUrls = [];
     if (Array.isArray(media_urls)) {
       for (const url of media_urls) {
         if (url && url.startsWith('data:image')) {
-          const matches = url.match(/^data:image\/([A-Za-z-+\/]+);base64,(.+)$/);
-          if (matches && matches.length === 3) {
-            const extension = matches[1] === 'jpeg' ? 'jpg' : matches[1];
-            const buffer = Buffer.from(matches[2], 'base64');
-            const filename = `${req.userId}_post_${Date.now()}_${Math.floor(Math.random()*1000)}.${extension}`;
-            const uploadDir = path.join(__dirname, '../../public/uploads');
-            if (!fs.existsSync(uploadDir)) {
-              fs.mkdirSync(uploadDir, { recursive: true });
-            }
-            const filepath = path.join(uploadDir, filename);
-            fs.writeFileSync(filepath, buffer);
-            finalMediaUrls.push(`/uploads/${filename}`);
-          } else {
-            finalMediaUrls.push(url);
-          }
+          const storedUrl = await storeImageDataUri({
+            userId: req.userId,
+            dataUri: url,
+            purpose: 'post',
+          });
+          finalMediaUrls.push(storedUrl || url);
         } else {
           finalMediaUrls.push(url);
         }

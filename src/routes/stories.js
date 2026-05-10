@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authMiddleware } = require('../middleware/auth');
 const db = require('../db/database');
+const { storeImageDataUri } = require('../services/media_storage');
 
 const router = express.Router();
 
@@ -13,24 +14,14 @@ router.post('/', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'media_url or text_content is required' });
     }
 
-    const fs = require('fs');
-    const path = require('path');
     let finalMediaUrl = media_url || '';
 
     if (finalMediaUrl && finalMediaUrl.startsWith('data:image')) {
-      const matches = finalMediaUrl.match(/^data:image\/([A-Za-z-+\/]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        const extension = matches[1] === 'jpeg' ? 'jpg' : matches[1];
-        const buffer = Buffer.from(matches[2], 'base64');
-        const filename = `${req.userId}_story_${Date.now()}_${Math.floor(Math.random()*1000)}.${extension}`;
-        const uploadDir = path.join(__dirname, '../../public/uploads');
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        const filepath = path.join(uploadDir, filename);
-        fs.writeFileSync(filepath, buffer);
-        finalMediaUrl = `/uploads/${filename}`;
-      }
+      finalMediaUrl = await storeImageDataUri({
+        userId: req.userId,
+        dataUri: finalMediaUrl,
+        purpose: 'story',
+      }) || finalMediaUrl;
     }
 
     const storyId = uuidv4();
@@ -130,4 +121,3 @@ router.get('/:id/viewers', authMiddleware, async (req, res) => {
 });
 
 module.exports = router;
-

@@ -75,6 +75,26 @@ async function initialize() {
   try {
     const client = await pool.connect();
     const version = await client.query('SELECT version()');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS media_uploads (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        file_name VARCHAR(255) NOT NULL,
+        file_type VARCHAR(50),
+        file_size INTEGER,
+        storage_url VARCHAR(500) NOT NULL,
+        ipfs_hash VARCHAR(255),
+        width INTEGER,
+        height INTEGER,
+        duration_ms INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await client.query(`
+      ALTER TABLE media_uploads
+      ADD COLUMN IF NOT EXISTS mime_type VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS storage_blob BYTEA;
+    `);
     console.log('[DB INIT] Connected to PostgreSQL');
     console.log('[DB INIT]', version.rows[0].version.split(',')[0]);
     client.release();
