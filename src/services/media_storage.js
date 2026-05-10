@@ -34,23 +34,10 @@ async function storeImageDataUri({
     return null;
   }
 
-  if (isCloudinaryConfigured()) {
-    try {
-      return await uploadImageToCloudinary({
-        userId,
-        dataUri,
-        extension: parsed.extension,
-        purpose,
-      });
-    } catch (error) {
-      console.error('[Cloudinary Upload] Falling back to database storage:', error.message);
-    }
-  }
-
-  return storeImageInDatabase({
+  return storeParsedImage({
     userId,
-    purpose,
     parsed,
+    purpose,
   });
 }
 
@@ -60,6 +47,10 @@ function isCloudinaryConfigured() {
       process.env.CLOUDINARY_API_KEY &&
       process.env.CLOUDINARY_API_SECRET,
   );
+}
+
+function shouldRequireCloudinary() {
+  return `${process.env.REQUIRE_CLOUDINARY_STORAGE || 'false'}`.toLowerCase() === 'true';
 }
 
 async function uploadImageToCloudinary({
@@ -123,6 +114,47 @@ async function uploadImageToCloudinary({
   return payload.secure_url;
 }
 
+async function storeParsedImage({
+  userId,
+  parsed,
+  purpose = 'upload',
+}) {
+  if (!isCloudinaryConfigured()) {
+    if (shouldRequireCloudinary()) {
+      throw new Error('Cloudinary storage is required but not configured.');
+    }
+    return storeImageInDatabase({
+      userId,
+      purpose,
+      parsed,
+    });
+  }
+
+  try {
+    return await uploadImageToCloudinary({
+      userId,
+      dataUri: parsedToDataUri(parsed),
+      extension: parsed.extension,
+      purpose,
+    });
+  } catch (error) {
+    if (shouldRequireCloudinary()) {
+      throw error;
+    }
+
+    console.error('[Cloudinary Upload] Falling back to database storage:', error.message);
+    return storeImageInDatabase({
+      userId,
+      purpose,
+      parsed,
+    });
+  }
+}
+
+function parsedToDataUri(parsed) {
+  return `data:${parsed.mimeType};base64,${parsed.buffer.toString('base64')}`;
+}
+
 function signCloudinaryParams(params, apiSecret) {
   const parts = Object.entries(params)
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -173,7 +205,11 @@ async function getStoredMedia(id) {
 }
 
 module.exports = {
+  isCloudinaryConfigured,
+  parsedToDataUri,
   parseDataUriImage,
+  shouldRequireCloudinary,
+  storeParsedImage,
   storeImageDataUri,
   getStoredMedia,
 };
