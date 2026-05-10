@@ -599,7 +599,7 @@ router.post('/request-otp', async (req, res) => {
     console.error('[request-otp] CRITICAL ERROR:', err);
     res.status(500).json({ 
       message: 'Failed to send OTP', 
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined 
+      error: err.message,
     });
   }
 });
@@ -651,7 +651,7 @@ router.post('/forgot-password', async (req, res) => {
     console.error('[forgot-password] CRITICAL ERROR:', err);
     res.status(500).json({ 
       message: 'Failed to send reset code',
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+      error: err.message,
     });
   }
 });
