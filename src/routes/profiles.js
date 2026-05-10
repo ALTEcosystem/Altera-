@@ -119,10 +119,12 @@ router.get('/me/insights', authMiddleware, async (req, res) => {
       [userId]
     );
 
-    // Engagement rate: likes+comments / posts
-    const totalPosts = parseInt(postStats.total_posts) || 1;
+    // Average interactions per post: (likes + comments) / posts
+    const totalPosts = parseInt(postStats.total_posts) || 0;
     const totalEngagement = parseInt(postStats.total_likes) + parseInt(postStats.total_comments);
-    const engagementRate = ((totalEngagement / totalPosts) * 100).toFixed(1);
+    const avgInteraction = totalPosts > 0
+      ? (totalEngagement / totalPosts).toFixed(1)
+      : '0.0';
 
     res.json({
       profile: {
@@ -132,7 +134,7 @@ router.get('/me/insights', authMiddleware, async (req, res) => {
         total_views: parseInt(postStats.total_views),
         followers: parseInt(followerData.followers),
         following: parseInt(followingData.following),
-        engagement_rate: parseFloat(engagementRate),
+        avg_interaction: parseFloat(avgInteraction),
         weekly_posts: parseInt(weeklyPosts.weekly_posts),
         weekly_likes: parseInt(weeklyPosts.weekly_likes),
         pending_approvals: parseInt(pendingCount.cnt),
@@ -152,10 +154,10 @@ router.get('/me/insights', authMiddleware, async (req, res) => {
         weekly_comments: parseInt(ai.weekly_comments),
         pending_count: parseInt(ai.pending_count),
         flagged_count: parseInt(ai.flagged_count),
-        engagement_rate: (() => {
-          const posts = parseInt(ai.post_count) || 1;
+        avg_interaction: (() => {
+          const posts = parseInt(ai.post_count) || 0;
           const eng = parseInt(ai.total_likes) + parseInt(ai.total_comments);
-          return parseFloat(((eng / posts) * 100).toFixed(1));
+          return posts > 0 ? parseFloat((eng / posts).toFixed(1)) : 0.0;
         })(),
       })),
     });
