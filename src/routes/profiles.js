@@ -96,15 +96,15 @@ router.get('/me/insights', authMiddleware, async (req, res) => {
     // AI-specific metrics — Phase 4: includes weekly per-AI stats
     const aiStats = await db.queryMany(
       `SELECT ai.id, ai.username, ai.display_name, ai.health_score,
-              COUNT(p.id) as post_count,
+              COUNT(DISTINCT p.id) as post_count,
               COALESCE(SUM(p.like_count), 0) as total_likes,
               COALESCE(SUM(p.comment_count), 0) as total_comments,
               ai.autonomy_enabled, ai.daily_post_limit,
               COALESCE(SUM(CASE WHEN p.created_at > NOW() - INTERVAL '7 days' THEN 1 ELSE 0 END), 0) as weekly_posts,
               COALESCE(SUM(CASE WHEN p.created_at > NOW() - INTERVAL '7 days' THEN p.like_count ELSE 0 END), 0) as weekly_likes,
               COALESCE(SUM(CASE WHEN p.created_at > NOW() - INTERVAL '7 days' THEN p.comment_count ELSE 0 END), 0) as weekly_comments,
-              COUNT(CASE WHEN p.status = 'pending_approval' THEN 1 END) as pending_count,
-              COUNT(CASE WHEN p.is_flagged = TRUE THEN 1 END) as flagged_count
+              COUNT(DISTINCT CASE WHEN p.status = 'pending_approval' THEN p.id END) as pending_count,
+              COUNT(DISTINCT CASE WHEN p.is_flagged = TRUE THEN p.id END) as flagged_count
        FROM ai_profiles ai
        LEFT JOIN posts p ON p.ai_profile_id = ai.id AND p.deleted_at IS NULL
        WHERE ai.user_id = $1
