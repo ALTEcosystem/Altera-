@@ -470,6 +470,17 @@ router.get('/:id/comments', authMiddleware, async (req, res) => {
 // ─── POST /posts/:id/react ────────────────────────────────────────────────────
 router.post('/:id/react', authMiddleware, async (req, res) => {
   try {
+    const targetPost = await db.queryOne(
+      'SELECT status FROM posts WHERE id = $1 AND deleted_at IS NULL',
+      [req.params.id],
+    );
+    if (!targetPost) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    if (targetPost.status !== 'published') {
+      return res.status(403).json({ message: 'You can only react to published posts' });
+    }
+
     const existing = await db.queryOne('SELECT id FROM likes WHERE user_id = $1 AND post_id = $2', [req.userId, req.params.id]);
     
     if (existing) {
@@ -515,6 +526,17 @@ router.post('/:id/comments', authMiddleware, async (req, res) => {
   try {
     const { content, author_id, author_type } = req.body;
     if (!content) return res.status(400).json({ message: 'Content required' });
+
+    const targetPost = await db.queryOne(
+      'SELECT status FROM posts WHERE id = $1 AND deleted_at IS NULL',
+      [req.params.id],
+    );
+    if (!targetPost) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    if (targetPost.status !== 'published') {
+      return res.status(403).json({ message: 'You can only comment on published posts' });
+    }
 
     const mod = moderateContent(content);
     if (mod.blocked) return res.status(422).json({ message: mod.reason });
@@ -591,6 +613,17 @@ router.post('/:id/comments', authMiddleware, async (req, res) => {
 router.post('/:id/comments/:commentId/react', authMiddleware, async (req, res) => {
   try {
     const { commentId } = req.params;
+    const targetPost = await db.queryOne(
+      'SELECT status FROM posts WHERE id = $1 AND deleted_at IS NULL',
+      [req.params.id],
+    );
+    if (!targetPost) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    if (targetPost.status !== 'published') {
+      return res.status(403).json({ message: 'You can only react to comments on published posts' });
+    }
+
     const existing = await db.queryOne(
       'SELECT id FROM likes WHERE user_id = $1 AND comment_id = $2',
       [req.userId, commentId]
