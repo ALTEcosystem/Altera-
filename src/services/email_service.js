@@ -6,6 +6,14 @@ const resendFromEmail =
   process.env.SMTP_FROM ||
   'ALTERA <onboarding@resend.dev>';
 
+function usesPlaceholderSender(value) {
+  const normalized = `${value || ''}`.toLowerCase();
+  return (
+    normalized.includes('yourdomain.com') ||
+    normalized.includes('example.com')
+  );
+}
+
 function hasResendConfig() {
   return resendApiKey.trim().length > 0;
 }
@@ -36,6 +44,12 @@ function createSmtpTransporter() {
 }
 
 async function sendViaResend({ to, subject, text, html }) {
+  if (usesPlaceholderSender(resendFromEmail)) {
+    throw new Error(
+      'RESEND_FROM_EMAIL is using a placeholder domain. Set it to an address on your verified sending domain.',
+    );
+  }
+
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -76,6 +90,10 @@ async function sendViaSmtp({ to, subject, text, html }) {
 
 async function sendEmail({ to, subject, text, html }) {
   const errors = [];
+
+  console.log(
+    `[EmailService] Provider check: resend=${hasResendConfig()} smtp=${hasSmtpConfig()} from="${resendFromEmail}"`,
+  );
 
   if (hasResendConfig()) {
     try {

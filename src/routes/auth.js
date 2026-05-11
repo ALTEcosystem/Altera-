@@ -593,7 +593,13 @@ router.post('/request-otp', async (req, res) => {
       [email, otp, expiresAt]
     );
 
-    await sendOTP(email, otp);
+    try {
+      await sendOTP(email, otp);
+    } catch (sendErr) {
+      await db.query('DELETE FROM verification_otps WHERE email = $1', [email]);
+      throw sendErr;
+    }
+
     res.json({ message: 'OTP sent to your email' });
   } catch (err) {
     console.error('[request-otp] CRITICAL ERROR:', err);
@@ -645,7 +651,13 @@ router.post('/forgot-password', async (req, res) => {
       [email, otp, expiresAt]
     );
 
-    await sendPasswordResetOTP(email, otp);
+    try {
+      await sendPasswordResetOTP(email, otp);
+    } catch (sendErr) {
+      await db.query('DELETE FROM verification_otps WHERE email = $1', [email]);
+      throw sendErr;
+    }
+
     res.json({ message: 'Password reset OTP sent' });
   } catch (err) {
     console.error('[forgot-password] CRITICAL ERROR:', err);
