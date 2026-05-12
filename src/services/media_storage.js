@@ -2,26 +2,37 @@ const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db/database');
 
-function parseDataUriImage(dataUri) {
-  if (typeof dataUri !== 'string' || !dataUri.startsWith('data:image')) {
+function parseDataUriMedia(dataUri) {
+  if (typeof dataUri !== 'string' || !dataUri.startsWith('data:')) {
     return null;
   }
 
-  const matches = dataUri.match(/^data:(image\/[A-Za-z0-9.+-]+);base64,(.+)$/);
+  const matches = dataUri.match(/^data:([A-Za-z0-9.+-]+\/[A-Za-z0-9.+-]+);base64,(.+)$/);
   if (!matches || matches.length !== 3) {
     return null;
   }
 
   const mimeType = matches[1].toLowerCase();
+  const [category, rawSubtype = 'bin'] = mimeType.split('/');
+  if (!['image', 'audio', 'video'].includes(category)) {
+    return null;
+  }
+
   const buffer = Buffer.from(matches[2], 'base64');
-  const subtype = mimeType.split('/')[1] || 'jpg';
+  const subtype = rawSubtype || 'bin';
   const extension = subtype === 'jpeg' ? 'jpg' : subtype.replace(/[^a-z0-9]/gi, '');
 
   return {
+    fileType: category,
     mimeType,
     buffer,
-    extension: extension || 'jpg',
+    extension: extension || 'bin',
   };
+}
+
+function parseDataUriImage(dataUri) {
+  const parsed = parseDataUriMedia(dataUri);
+  return parsed?.fileType === 'image' ? parsed : null;
 }
 
 async function storeImageDataUri({
@@ -41,6 +52,23 @@ async function storeImageDataUri({
   });
 }
 
+async function storeMediaDataUri({
+  userId,
+  dataUri,
+  purpose = 'upload',
+}) {
+  const parsed = parseDataUriMedia(dataUri);
+  if (!parsed) {
+    return null;
+  }
+
+  return storeParsedMedia({
+    userId,
+    parsed,
+    purpose,
+  });
+}
+
 function isCloudinaryConfigured() {
   return Boolean(
     process.env.CLOUDINARY_CLOUD_NAME &&
@@ -54,10 +82,14 @@ function shouldRequireCloudinary() {
 }
 
 async function uploadImageToCloudinary({
+  resourceType = 'image',
+  fileType = 'image',
   userId,
   dataUri,
   extension,
   purpose,
+  mimeType,
+  fileSize,
 }) {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
   const apiKey = process.env.CLOUDINARY_API_KEY;
@@ -80,7 +112,7 @@ async function uploadImageToCloudinary({
   formData.append('signature', signature);
 
   const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+    `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
     {
       method: 'POST',
       body: formData,
@@ -104,10 +136,10 @@ async function uploadImageToCloudinary({
       uuidv4(),
       userId,
       `${publicId}.${extension}`,
-      'image',
-      null,
+      fileType,
+      fileSize ?? null,
       payload.secure_url,
-      payload.format ? `image/${payload.format}` : null,
+      mimeType || (payload.format ? `${fileType}/${payload.format}` : null),
     ],
   );
 
@@ -119,11 +151,29 @@ async function storeParsedImage({
   parsed,
   purpose = 'upload',
 }) {
+  return storeParsedMedia({
+    userId,
+    parsed,
+    purpose,
+  });
+}
+
+function getCloudinaryResourceType(fileType) {
+  if (fileType === 'image') return 'image';
+  if (fileType === 'video' || fileType === 'audio') return 'video';
+  return 'raw';
+}
+
+async function storeParsedMedia({
+  userId,
+  parsed,
+  purpose = 'upload',
+}) {
   if (!isCloudinaryConfigured()) {
     if (shouldRequireCloudinary()) {
       throw new Error('Cloudinary storage is required but not configured.');
     }
-    return storeImageInDatabase({
+    return storeMediaInDatabase({
       userId,
       purpose,
       parsed,
@@ -132,10 +182,14 @@ async function storeParsedImage({
 
   try {
     return await uploadImageToCloudinary({
+      resourceType: getCloudinaryResourceType(parsed.fileType),
+      fileType: parsed.fileType,
       userId,
       dataUri: parsedToDataUri(parsed),
       extension: parsed.extension,
       purpose,
+      mimeType: parsed.mimeType,
+      fileSize: parsed.buffer.length,
     });
   } catch (error) {
     if (shouldRequireCloudinary()) {
@@ -143,7 +197,7 @@ async function storeParsedImage({
     }
 
     console.error('[Cloudinary Upload] Falling back to database storage:', error.message);
-    return storeImageInDatabase({
+    return storeMediaInDatabase({
       userId,
       purpose,
       parsed,
@@ -167,7 +221,7 @@ function signCloudinaryParams(params, apiSecret) {
     .digest('hex');
 }
 
-async function storeImageInDatabase({
+async function storeMediaInDatabase({
   userId,
   purpose,
   parsed,
@@ -184,7 +238,7 @@ async function storeImageInDatabase({
       id,
       userId,
       fileName,
-      'image',
+      parsed.fileType,
       parsed.buffer.length,
       storageUrl,
       parsed.mimeType,
@@ -207,9 +261,12 @@ async function getStoredMedia(id) {
 module.exports = {
   isCloudinaryConfigured,
   parsedToDataUri,
+  parseDataUriMedia,
   parseDataUriImage,
   shouldRequireCloudinary,
+  storeParsedMedia,
   storeParsedImage,
+  storeMediaDataUri,
   storeImageDataUri,
   getStoredMedia,
 };

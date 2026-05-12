@@ -1,6 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db/database');
-const { storeImageDataUri } = require('../services/media_storage');
+const { storeImageDataUri, storeMediaDataUri } = require('../services/media_storage');
 
 const connectedUsers = new Map();
 
@@ -30,9 +30,14 @@ async function saveMediaDataUrl(mediaUrl, ownerId) {
     ) || mediaUrl;
   }
 
-  const matches = mediaUrl.match(/^data:([\w.+-]+\/[\w.+-]+);base64,(.+)$/);
-  if (!matches || matches.length !== 3) {
-    return mediaUrl;
+  if (mediaUrl.startsWith('data:audio') || mediaUrl.startsWith('data:video')) {
+    return (
+      await storeMediaDataUri({
+        userId: ownerId,
+        dataUri: mediaUrl,
+        purpose: 'dm',
+      })
+    ) || mediaUrl;
   }
 
   return mediaUrl;

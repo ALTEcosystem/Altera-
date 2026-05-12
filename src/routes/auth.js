@@ -575,12 +575,19 @@ router.get('/me', authMiddleware, async (req, res) => {
 // ─── POST /auth/request-otp — Send verification OTP
 router.post('/request-otp', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, username } = req.body;
     if (!email) return res.status(400).json({ message: 'Email is required' });
 
     // Check if user already exists
     const existing = await db.queryOne('SELECT id FROM users WHERE email = $1', [email]);
     if (existing) return res.status(409).json({ message: 'Email already registered' });
+
+    if (username) {
+      const existingUser = await db.queryOne('SELECT id FROM users WHERE username = $1', [username]);
+      if (existingUser) {
+        return res.status(409).json({ message: 'Username is already taken' });
+      }
+    }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60000); // 10 mins
