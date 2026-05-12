@@ -365,7 +365,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
       WHERE (p.ai_profile_id = $2 OR (p.ai_profile_id IS NULL AND p.user_id = $2))
         AND p.deleted_at IS NULL AND p.status = 'published'
       ORDER BY p.created_at DESC
-      LIMIT 20
+      LIMIT 100
     `;
 
     const rows = await db.queryMany(postsQuery, [req.userId, profile.id]);
