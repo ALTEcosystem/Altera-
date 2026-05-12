@@ -57,6 +57,14 @@ function buildNotificationMessage({ content, mediaUrl }) {
   return 'sent you a message.';
 }
 
+function isAudioUrl(mediaUrl) {
+  return (
+    typeof mediaUrl === 'string' &&
+    (mediaUrl.startsWith('data:audio/') ||
+      /\.(mp3|wav|m4a|aac|ogg)(\?.*)?$/i.test(mediaUrl))
+  );
+}
+
 function setupSocketIO(io) {
   io.use((socket, next) => {
     const token =
@@ -273,6 +281,90 @@ function setupSocketIO(io) {
       } catch (err) {
         console.error('[Socket DM Error]', err);
         socket.emit('dm:error', { message: 'Failed to send message' });
+      }
+    });
+
+    socket.on('dm:read', async (data) => {
+      try {
+        const conversationId = `${data?.conversation_id || ''}`.trim();
+        const readerProfileId = `${data?.reader_profile_id || ''}`.trim();
+        const messageIds = Array.isArray(data?.message_ids)
+          ? data.message_ids.filter((id) => typeof id === 'string' && id.trim().length > 0)
+          : [];
+
+        if (!conversationId || !readerProfileId || messageIds.length === 0) {
+          return;
+        }
+
+        const updatedRows = await db.queryMany(
+          `UPDATE messages
+           SET is_read = TRUE,
+               read_at = COALESCE(read_at, NOW()),
+               status = CASE WHEN status = 'played' THEN 'played' ELSE 'read' END
+           WHERE conversation_id = $1
+             AND recipient_profile_id = $2
+             AND id = ANY($3::uuid[])
+           RETURNING id, sender_id, sender_profile_id, sender_type, recipient_id, recipient_profile_id, recipient_type, read_at, status`,
+          [conversationId, readerProfileId, messageIds]
+        );
+
+        if (!updatedRows.length) {
+          return;
+        }
+
+        const senderUserIds = [...new Set(updatedRows.map((row) => row.sender_id).filter(Boolean))];
+        const payload = {
+          conversation_id: conversationId,
+          message_ids: updatedRows.map((row) => row.id),
+          status: 'read',
+          read_at: updatedRows[0].read_at,
+          reader_profile_id: readerProfileId,
+        };
+
+        for (const senderUserId of senderUserIds) {
+          io.to(`user:${senderUserId}`).emit('dm:status', payload);
+        }
+      } catch (err) {
+        console.error('[Socket DM Read Error]', err);
+      }
+    });
+
+    socket.on('dm:played', async (data) => {
+      try {
+        const messageId = `${data?.message_id || ''}`.trim();
+        const playerProfileId = `${data?.player_profile_id || ''}`.trim();
+        if (!messageId || !playerProfileId) {
+          return;
+        }
+
+        const rows = await db.queryMany(
+          `UPDATE messages
+           SET is_read = TRUE,
+               read_at = COALESCE(read_at, NOW()),
+               status = 'played'
+           WHERE id = $1
+             AND recipient_profile_id = $2
+             AND media_url IS NOT NULL
+           RETURNING id, conversation_id, sender_id, media_url, read_at, status`,
+          [messageId, playerProfileId]
+        );
+
+        if (!rows.length || !isAudioUrl(rows[0].media_url)) {
+          return;
+        }
+
+        const payload = {
+          conversation_id: rows[0].conversation_id,
+          message_ids: [rows[0].id],
+          status: 'played',
+          read_at: rows[0].read_at,
+          player_profile_id: playerProfileId,
+        };
+
+        io.to(`user:${rows[0].sender_id}`).emit('dm:status', payload);
+        socket.emit('dm:status', payload);
+      } catch (err) {
+        console.error('[Socket DM Played Error]', err);
       }
     });
 
