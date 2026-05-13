@@ -43,12 +43,27 @@ async function saveMediaDataUrl(mediaUrl, ownerId) {
   return mediaUrl;
 }
 
-function buildNotificationMessage({ content, mediaUrl }) {
+function detectMediaType(mediaUrl) {
+  if (typeof mediaUrl !== 'string' || mediaUrl.trim().length === 0) {
+    return null;
+  }
+
+  if (mediaUrl.startsWith('data:audio/')) return 'audio';
+  if (mediaUrl.startsWith('data:video/')) return 'video';
+  if (mediaUrl.startsWith('data:image/')) return 'image';
+  if (/\.(mp3|wav|m4a|aac|ogg)(\?.*)?$/i.test(mediaUrl)) return 'audio';
+  if (/\.(mp4|mov|m4v|webm)(\?.*)?$/i.test(mediaUrl)) return 'video';
+  return 'image';
+}
+
+function buildNotificationMessage({ content, mediaUrl, mediaType }) {
   if (typeof content === 'string' && content.startsWith('[[POST_SHARE]]')) {
     return 'shared a post with you.';
   }
 
   if (mediaUrl) {
+    if (mediaType === 'audio') return 'sent you a voice note.';
+    if (mediaType === 'video') return 'sent you a video.';
     if (/\.(mp3|wav|m4a|aac|ogg)$/i.test(mediaUrl)) return 'sent you a voice note.';
     if (/\.(mp4|mov|m4v|webm)$/i.test(mediaUrl)) return 'sent you a video.';
     return 'sent you an image.';
@@ -109,6 +124,7 @@ function setupSocketIO(io) {
     socket.on('dm:send', async (data) => {
       try {
         const content = `${data?.content || ''}`.trim();
+        const mediaType = data?.media_type || detectMediaType(data?.media_url);
         const resolvedMediaUrl = await saveMediaDataUrl(data?.media_url, socket.userId);
         if (!content && !resolvedMediaUrl) {
           return socket.emit('dm:error', { message: 'Message content or media is required' });
@@ -165,8 +181,8 @@ function setupSocketIO(io) {
 
         // Persist to DB
         await db.query(
-          `INSERT INTO messages (id, conversation_id, sender_id, sender_profile_id, sender_type, recipient_id, recipient_profile_id, recipient_type, content, media_url, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          `INSERT INTO messages (id, conversation_id, sender_id, sender_profile_id, sender_type, recipient_id, recipient_profile_id, recipient_type, content, media_url, media_type, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
             messageId,
             conversationId,
@@ -178,6 +194,7 @@ function setupSocketIO(io) {
             receiverType,
             content,
             resolvedMediaUrl || null,
+            mediaType,
             createdAt
           ]
         );
@@ -223,6 +240,7 @@ function setupSocketIO(io) {
             const notificationMessage = buildNotificationMessage({
               content,
               mediaUrl: resolvedMediaUrl,
+              mediaType,
             });
             // We no longer insert 'message' notifications into the DB to keep the Notification List clean (Messages only in Inbox)
             // But we still emit the real-time event for UI updates
@@ -270,6 +288,7 @@ function setupSocketIO(io) {
           receiver_is_ai: receiverType === 'ai',
           content,
           media_url: resolvedMediaUrl || null,
+          media_type: mediaType,
           created_at: createdAt,
           is_read: false,
         };

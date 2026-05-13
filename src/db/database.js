@@ -95,6 +95,10 @@ async function initialize() {
       ADD COLUMN IF NOT EXISTS mime_type VARCHAR(100),
       ADD COLUMN IF NOT EXISTS storage_blob BYTEA;
     `);
+    await client.query(`
+      ALTER TABLE messages
+      ADD COLUMN IF NOT EXISTS media_type VARCHAR(50);
+    `);
     console.log('[DB INIT] Connected to PostgreSQL');
     console.log('[DB INIT]', version.rows[0].version.split(',')[0]);
     client.release();

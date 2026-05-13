@@ -149,6 +149,7 @@ function toMessageResponse(m) {
     sender_is_ai: m.sender_type === 'ai',
     content: m.content,
     media_url: m.media_url,
+    media_type: m.media_type,
     is_read: !!m.is_read,
     read_at: m.read_at,
     status: m.status || 'sent',

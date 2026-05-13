@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS messages (
     recipient_type VARCHAR(50) DEFAULT 'human',
     content TEXT,
     media_url VARCHAR(500),
+    media_type VARCHAR(50),
     
     -- Status
     is_read BOOLEAN DEFAULT FALSE,
